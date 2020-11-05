@@ -1,12 +1,15 @@
 // todo in widget: 
 // 1. canvas [x]
 // 2. multistep zoom [x]
-// 3. zoom with scroll on desktop
-// 4. zoom with fingers on phone
-// 5. zoom buttons: in, out, center
-// 6. point event handler
-// 7. all data must be received through json (bg, points, rows)
-// 8. placeholder of point
+// 3. zoom with scroll on desktop [x]
+// 4. zoom with double click/tap 
+// 5. zoom with fingers on phone
+// 6. zoom buttons: in, out, center
+// 7. point event handler
+// 8. all data must be received through json (bg, points, rows)
+// 9. placeholder of point
+
+// FIXME: bug with zoom on windows with size less original scheme image size 
 
 export default class Blueprint {
   constructor(target, bg, points) {
@@ -16,20 +19,47 @@ export default class Blueprint {
     this.scheme.sizes = { w: +bg.width, h: +bg.height };
     this.points = points;
 
+    this.current = { 
+      x: 0, 
+      y: 0, 
+      zoom: { scale: null, step: null },
+      acceptOverflow: false
+    };
+
+    this.schemeCanvas = null;
     this.scales = this.setScales();
     this.isDragged = false;
 
-    this.schemeCanvas = null;
-
-    // this.CANVAS_SELECTOR = '.blueprint__canvas-wrapper';
     this.IS_MOBILE = window.innerWidth <= 1024;
 
-    this.current = { x: 0, y: 0 };
     this.initialize();
   }
 
   get center() {
-    return { x : this.target.offsetWidth / 2, y : this.target.offsetHeight / 2 }
+    const { offsetWidth, offsetHeight } = this.target;
+    
+    return { x : offsetWidth / 2, y : offsetHeight / 2 }
+  }
+
+  get zoom() {
+    return this.current.zoom;
+  }
+
+  set zoom(arr) {
+    const [ scale, step ] = arr;
+    this.current.zoom = { scale, step }
+
+    return this.current.zoom;
+  }
+
+  get overflow() {
+    return this.current.acceptOverflow;
+  }
+
+  set overflow(bool) {
+    this.current.acceptOverflow = bool
+
+    return this.current.acceptOverflow;
   }
 
   initialize() {
@@ -40,10 +70,12 @@ export default class Blueprint {
     const { w, h } = this.scheme.sizes;
 
     this.schemeCanvas = this.buildCanvasLayout(
-      this.createCanvas('background'), w, h
+      this.createCanvas('background'), 
+      w, h
     );
 
     this.initializeSchemeDrag();
+    this.initializeSchemeZoom();
   }
 
   createCanvas(type) {
@@ -52,6 +84,7 @@ export default class Blueprint {
     c.setAttribute('id', `blueprint-${type}`);
     c.setAttribute('class', `blueprint__canvas`);
     c.setAttribute('data-type', type);
+    c.setAttribute('style', 'transform: scale(1) translate(0px, 0px)');
 
     this.target.append(c);
     
@@ -61,15 +94,15 @@ export default class Blueprint {
   buildCanvasLayout(layout, width, height) {
     let ctx;
 
-    // todo: refactor
     switch(layout.getAttribute('data-type')) {
       case 'background':
+        const { offsetWidth, offsetHeight } = this.target;
         ctx = layout.getContext('2d');
     
-        layout.setAttribute('width',  this.target.offsetWidth);
-        layout.setAttribute('height', this.target.offsetHeight);
+        layout.setAttribute('width',  offsetWidth);
+        layout.setAttribute('height', offsetHeight);
 
-        const bg = new Image(width, height);
+        const bg = new Image();
         bg.src = this.scheme.image;
         
         bg.onload = _ => {
@@ -103,8 +136,10 @@ export default class Blueprint {
     let z = Math.min(zw, zh);
 
     let minScales = [ ...new Array(5) ].map(( _, k) => Math.max(z, z * (Math.pow(1.5, k)))).filter(i => i < 1);
-    let maxScales = [ ...new Array(5) ].map(( _, k) => Math.max(z, z * (Math.pow(1.5, k)))).filter(i => i > 1);
+    let maxScales = [ ...new Array(5) ].map(( _, k) => Math.max(z, z * (Math.pow(1.5, k)))).filter(i => i > 1 && i <= 2);
     
+    this.zoom = [ Object.values(minScales).length === 0 ? 1 : minScales[0] , 0 ];
+
     return [ ...minScales, 1, ...maxScales ];
   }
 
@@ -127,6 +162,7 @@ export default class Blueprint {
     }
 
     const drag = e => {
+      if(e.target !== this.schemeCanvas.canvas) return;
       if(this.isDragged) {
         const { left, top } = this.schemeCanvas.canvas.getBoundingClientRect();
         let dx, dy;
@@ -142,23 +178,30 @@ export default class Blueprint {
         this.current.x += dx;
         this.current.y += dy;
 
-        e.target.style = `transform: translate(${this.current.x}px, ${this.current.y}px)`;
+        e.target.style = `transform: scale(${this.zoom.scale}) translate(${this.current.x}px, ${this.current.y}px)`;
       }
     }
 
     const endDrag = e => {
       if(this.isDragged) this.isDragged = false;
+
+      const { canvas } = this.schemeCanvas;
+      const { width, height, left, top } = canvas.getBoundingClientRect();
+      const { w, h } = this.scheme.sizes;
       
-      // const { width, height, left, top } = this.schemeCanvas.canvas.getBoundingClientRect();
-      // const { w, h } = this.scheme.sizes;
-      // if(
-      //   left + width > w || 
-      //   left - width < w ||
-      //   top + height > h ||
-      //   top - height < h
-      // ) {
-      //   this.schemeCanvas.canvas.style = 'transform: translate(0px, 0px)';
-      // }
+      if(this.overflow) return;
+      else {
+        if(
+          left + width > w || 
+          left - width < w ||
+          top + height > h ||
+          top - height < h
+        ) {
+          this.current.x = 0; 
+          this.current.y = 0;
+          canvas.style = 'transform: scale(1), transform: translate(0px, 0px)';
+        }
+      }
     };
 
     this.target.addEventListener('mousedown', startDrag);
@@ -168,6 +211,55 @@ export default class Blueprint {
     this.target.addEventListener('touchstart', startDrag);
     this.target.addEventListener('touchmove', drag);
     this.target.addEventListener('touchend', endDrag);
+  }
+  
+  initializeSchemeZoom() {
+    const { length } = this.scales;
+    const _step = 0.1;
+
+    const zoomIn = withStep => {
+      if(withStep) {
+        let { scale, step } = this.zoom;
+        
+        this.overflow = true;
+        if(scale + _step < this.scales[length - 1] - _step) {
+          this.zoom = [ scale + _step, ++step];
+        } else {
+          this.zoom = [ this.scales[length - 1], length - 1];
+        }
+      }
+    };
+
+    const zoomOut = withStep => {
+      if(withStep) {
+        let { scale, step } = this.zoom;
+        
+        if(scale - _step > this.scales[0]) {
+          this.zoom = [ scale - _step, --step];
+        } else {
+          this.zoom = [ this.scales[0], 0];
+          this.overflow = false;
+        }
+      }
+    };
+
+    const wheelHandler = e => {
+      let delta = Math.max(-1, Math.min(1 , e.wheelDelta || -e.detail));
+
+      if(delta > 0) zoomIn(true);
+      if(delta < 0) zoomOut(true);
+    
+      this.recalculateCanvas()
+    }
+
+    this.target.addEventListener('wheel', wheelHandler)
+  }
+
+  recalculateCanvas(zoom) {
+    const { canvas } = this.schemeCanvas;
+    const { x, y } = this.current;
+
+    canvas.setAttribute('style', `transform: scale(${this.zoom.scale}) translate(${x}px, ${y}px)`);
   }
 }
 
