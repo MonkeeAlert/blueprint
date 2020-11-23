@@ -6,8 +6,10 @@ const production = process.env.NODE_ENV === "production";
 
 module.exports = {
     entry: {
+        // main: './src/js/main.js',
+        // blueprint: './src/js/blueprint.js',
         main: './src/js/main.js',
-        blueprint: './src/js/blueprint.js',
+        blueprint: './src/js/blueprint.ts',
     },
     output: {
         filename: production ? '[name].[hash].js' : '[name].js',
@@ -22,6 +24,11 @@ module.exports = {
                 use: {
                     loader: "babel-loader"
                 }
+            },
+            {
+                test: /\.tsx?$/,
+                use: 'ts-loader',
+                exclude: /node_modules/,
             },
             {
                 test: /\.sass|scss$/,
@@ -63,6 +70,9 @@ module.exports = {
                 ],
             }
         ]
+    },
+    resolve: {
+        extensions: [ '.ts', '.js' ],
     },
     plugins: [
         new MiniCssExtractPlugin({
