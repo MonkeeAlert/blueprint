@@ -1,6 +1,6 @@
 import "../scss/main.scss";
 import Data from "./data.json";
-import Blueprint from './blueprint';
+import Blueprint from './blueprint.ts';
 
 window.onload = _ => {
   // get data
