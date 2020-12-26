@@ -3,7 +3,7 @@ import Data from "./data.json";
 import Blueprint from './blueprint.ts';
 
 window.onload = _ => {
-  // get data
+  // get data 
   const data = Data;
   const { bg, points } = data;
 
@@ -15,9 +15,5 @@ window.onload = _ => {
       width  : bg.sizes.width,
       height : bg.sizes.height  
     },
-    {
-      points      : points, 
-      pointRadius : 10
-    }
   );
 }

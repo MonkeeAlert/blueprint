@@ -1,54 +1,66 @@
-// todo in widget: 
+// todo of widget: 
 // 1. canvas [x]
-// 2. multistep zoom [x]
-// 3. zoom with scroll on desktop [x]
-// 4. zoom with double click/tap 
-// 5. zoom with fingers on phone
-// 6. zoom buttons: in, out, center
-// 7. point event handler
-// 8. all data must be received through json (bg, points, rows)
-// 9. placeholder of point
+
+// ===== MOVING 
+// 1. move scheme on click on any of its point [x]
+
+// ===== ZOOM
+// 1. multistep zoom                  [x]
+// 2. zoom with scroll on desktop     [x]
+// 3. zoom with double click          [x]
+// 4. zoom with fingers on phone      
+// 5. zooming not in center of screen
+//    but on mouse pointer            
+
+// ===== BUTTON PANEL
+// 1. zoom in button                  [x]
+// 2. zoom out button                 [x]
+// 3. buttons panel                   [x]
+// 4. centerize button
+// 5. custom classname for panel                
+// 6. buttons turn on/off 
+
+// ===== POINTS
+// 1. point event handler
+// 2. placeholder of point
+
+// ===== OTHERS
+// 1. all data must be received through json (bg, points, rows)
 
 // FIXME: bug with zoom on windows with size less original scheme image size 
 
-interface IScheme {
-  image: string,
-  width: number,
-  height: number
-}
-
-type Zoom = {
-  scale: number,
-  step: number,
-}
-
-interface ICurrent {
-  x: number,
-  y: number,
-  zoom: Zoom,
-  acceptOverflow: boolean,
-  isDragged: boolean
-}
+import * as INTERFACES from './common/interfaces'; 
+import { FUNCTIONS } from './common/functions';
 
 class Blueprint {
   private target: HTMLElement;
-  private scheme: IScheme;
-  private points: object;
-  private scales: Array<number>;
+  private scheme: INTERFACES.IScheme;
+  private options: INTERFACES.IOptions;
+  private scales: number[];
   private schemeCanvas: CanvasRenderingContext2D;
-  current: ICurrent;
+  private timer: INTERFACES.IDragTimer;
+  private step: INTERFACES.IOptions['step'];
+  current: INTERFACES.ICurrent;
 
-  constructor( _target: HTMLElement, _bg: IScheme, _points: object ) {
+  constructor( _target: HTMLElement, _bg: INTERFACES.IScheme, _options?: INTERFACES.IOptions ) {
     this.target = _target;
     this.scheme = _bg;
-    this.points = _points;
+    
+    this.timer = { id: null };
 
-    this.current = <ICurrent>{
+    this.step = _options?.step || 0.1;
+    
+    if(_options) {
+      this.options = _options;
+    }
+
+    this.current = {
       x: 0, 
       y: 0, 
-      zoom: {},
+      zoom: { scale: 0, step: 0 },
       acceptOverflow: false,
-      isDragged: false
+      isDragged: false,
+      origin: []
     }
 
     this.scales = this.setScales();
@@ -57,18 +69,21 @@ class Blueprint {
     this.initialize();
   }
 
-  get center() {
+  get targetCenter() {
     const { offsetWidth, offsetHeight } = this.target;
     
-    return { x : offsetWidth / 2, y : offsetHeight / 2 }
+    return { 
+      x: offsetWidth / 2, 
+      y: offsetHeight / 2 
+    }
   }
 
   get zoom() {
     return this.current.zoom
   }
 
-  set zoom(obj: object) {
-    const { scale, step } = <Zoom>obj;
+  set zoom(obj: INTERFACES.IZoom) {
+    const { scale, step } = obj;
 
     this.current.zoom = { scale, step }
   }
@@ -89,8 +104,13 @@ class Blueprint {
     this.current.isDragged = state
   }
 
-  setScales = () : number[]=> {
-    const { width, height } = <IScheme>this.scheme;
+  clearTimer(id: INTERFACES.IDragTimer['id']): void {
+    clearTimeout(id);
+    this.timer.id = null;
+  } 
+  
+  setScales() : number[] {
+    const { width, height } = this.scheme;
     const { offsetWidth, offsetHeight } = this.target;
 
     let bgWidth  = width,
@@ -99,14 +119,15 @@ class Blueprint {
     let zw = offsetWidth / bgWidth,
         zh = offsetHeight / bgHeight;
 
-    let z = Math.min(zw, zh);
+    let z = Math.min(zw, zh),
+        tempArr = [ ...new Array(5)].map(( _, k) => Math.max(z, z * (Math.pow(1.5, k)))),
+        minScales = tempArr.filter(i => i < 1),
+        maxScales = tempArr.filter(i => i > 1 && i <= 2),
+        scales = [ ...minScales, 1, ...maxScales ];
 
-    let minScales = [ ...new Array(5) ].map(( _, k) => Math.max(z, z * (Math.pow(1.5, k)))).filter(i => i < 1);
-    let maxScales = [ ...new Array(5) ].map(( _, k) => Math.max(z, z * (Math.pow(1.5, k)))).filter(i => i > 1 && i <= 2);
+    this.zoom = { scale: scales[0], step : 0 };
     
-    this.current.zoom = { scale : Object.values(minScales).length === 0 ? 1 : minScales[0] , step : 0 };
-    
-    return [ ...minScales, 1, ...maxScales ];
+    return scales;
   }
 
   initialize() : void {
@@ -114,13 +135,14 @@ class Blueprint {
   }
 
   initializeSchemeLayout() : void {
-    const { width, height } = <IScheme>this.scheme;
+    const { width, height } = this.scheme;
     const canvas: HTMLCanvasElement = this.createCanvas('background');
 
     this.schemeCanvas = this.buildCanvasLayout(canvas, width, height);
 
     this.initializeSchemeDrag();
     this.initializeSchemeZoom();
+    // this.initializeScheme();
   }
 
   buildCanvasLayout(layout : HTMLCanvasElement, width : number, height : number) : CanvasRenderingContext2D {
@@ -140,7 +162,7 @@ class Blueprint {
             bg, 
             0, 0,
             width, height,
-            this.center.x - width * this.scales[0] / 2, this.center.y - height * this.scales[0] / 2,
+            this.targetCenter.x - width * this.scales[0] / 2, this.targetCenter.y - height * this.scales[0] / 2,
             width * this.scales[0], height * this.scales[0],
           );
         }
@@ -153,149 +175,152 @@ class Blueprint {
 
   createCanvas(type: string) : HTMLCanvasElement {
     const c: HTMLCanvasElement = document.createElement('canvas');
-
+    
     c.setAttribute('id', `blueprint-${type}`);
     c.setAttribute('class', `blueprint__canvas`);
     c.setAttribute('data-type', type);
-    c.setAttribute('style', 'transform: scale(1) translate(0px, 0px)');
+    c.setAttribute('style', `transform: scale(${this.zoom.scale}) translate(0px, 0px)`);
 
     this.target.append(c);
-    
     return c;
   } 
 
-  initializeSchemeDrag() {
+
+  /** Drag initializer function for mouse and touch events */
+  
+  initializeSchemeDrag() : void {
     let sx : number = 0, 
         sy : number = 0;
 
     const startDrag = (e: MouseEvent & TouchEvent): void => {
-      if(e.target !== this.schemeCanvas.canvas) return;
-
+      // console.log(functions.isDescendant(e.target as HTMLElement, this.target));
+      if(!FUNCTIONS.isDescendant(e.target as HTMLElement, this.target)) return;
+      
       const { left, top } : ClientRect = this.schemeCanvas.canvas.getBoundingClientRect();
+      
+      sx = e.clientX - left;
+      sy = e.clientY - top;
       
       this.current.isDragged = true;
       
-      // if(!this.IS_MOBILE) {
-        sx = e.clientX - left;
-        sy = e.clientY - top;
-      // } else {
-      //   sx = e.changedTouches[0].clientX - left;
-      //   sy = e.changedTouches[0].clientY - top;
-      // }
+      this.target.addEventListener('mouseup', endDrag);
+      this.target.addEventListener('mousemove', drag);
+      this.target.addEventListener('mouseleave', endDrag);
     }
 
     const drag = (e: any): void => {
-      if(e.target !== this.schemeCanvas.canvas) return;
+
       if(this.current.isDragged) {
         const { left, top } = this.schemeCanvas.canvas.getBoundingClientRect();
-        let dx: number = 0, 
-            dy: number = 0;
+        let dx = 0, 
+            dy = 0;
 
-        // if(!this.IS_MOBILE) {
-          dx = (e.clientX - left) - sx;
-          dy = (e.clientY - top) - sy;
-        // } else {
-        //   dx = (e.changedTouches[0].clientX - left) - sx;
-        //   dy = (e.changedTouches[0].clientY - top) - sy;
-        // }
+        dx = (e.clientX - left) - sx;
+        dy = (e.clientY - top) - sy;
 
         this.current.x += dx;
         this.current.y += dy;
 
-        e.target.style = `transform: scale(${this.current.zoom.scale}) translate(${this.current.x}px, ${this.current.y}px)`;
+        this.schemeCanvas.canvas.setAttribute('style', `transform: scale(${this.zoom.scale}) translate(${this.current.x}px, ${this.current.y}px)`);
       }
     }
-
-    const endDrag = (): void => {
+    
+    const endDrag = (e: any): void => {
       if(this.current.isDragged) this.drag = false;
-
-      const { width, height, left, top } = this.schemeCanvas.canvas.getBoundingClientRect();
-      const { width: w, height: h } = this.scheme;
       
-      if(this.overflow) return;
-      else {
-        if(
-          left + width > w || 
-          left - width < w ||
-          top + height > h ||
-          top - height < h
-        ) {
-          this.current.x = 0; 
-          this.current.y = 0;
-          this.schemeCanvas.canvas.setAttribute('style', 'transform: scale(1), transform: translate(0px, 0px)');
-        }
-      }
+      this.target.removeEventListener('mousemove', drag);
+      this.target.removeEventListener('mouseup', endDrag);
+      this.target.removeEventListener('mouseleave', endDrag);
     };
 
     this.target.addEventListener('mousedown', startDrag);
-    this.target.addEventListener('mousemove', drag);
-    this.target.addEventListener('mouseup', endDrag);
-    this.target.addEventListener('mouseleave', endDrag);
-    this.target.addEventListener('touchstart', startDrag);
-    this.target.addEventListener('touchmove', drag);
-    this.target.addEventListener('touchend', endDrag);
   }
-  
-  initializeSchemeZoom(): void {
+
+  /** Zooming in function
+   * 
+   * @param {boolean} withStep zoom with constant
+   */
+  zoomIn(e: MouseEvent | null, withStep?: boolean): void{
     const { length } = this.scales;
-    const _step = 0.1;
 
-    const zoomIn = (withStep: boolean): void => {
-      if(withStep) {
-        let { scale, step } = <Zoom>this.zoom;
-        
-        this.overflow = true;
-        if(scale + _step < this.scales[length - 1] - _step) {
-          this.zoom = {
-            scale: scale + _step, 
-            step: ++step
-          };
-        } else {
-          this.zoom = {
-            scale: this.scales[length - 1], 
-            step: length - 1
-          }; 
-        }
+    if(withStep) {
+      this.overflow = true;
+      
+      let scale = this.zoom.scale + this.step,
+          step = this.scales.filter(i => i <= scale).length;
+      
+      if(scale < this.scales[length - 1]) {
+        this.zoom = { scale, step };
+      } else {
+        this.zoom = { scale: this.scales[length - 1], step}; 
       }
-    };
-
-    const zoomOut = (withStep: boolean): void => {
-      if(withStep) {
-        let { scale, step } = <Zoom>this.zoom;
-        
-        if(scale - _step > this.scales[0]) {
-          this.zoom = { 
-            scale: scale - _step, 
-            step: --step 
-          };
-        } else {
-          this.zoom = { 
-            scale: this.scales[0], 
-            step: 0
-          };
-          this.overflow = false;
-        }
-      }
-    };
-
-    const wheelHandler = (e: WheelEvent) => {
-      let delta: number = Math.max(-1, Math.min(1 , e.deltaY || -e.detail));
-
-      if(delta < 0) zoomIn(true);
-      if(delta > 0) zoomOut(true);
-    
-      this.recalculateCanvas()
+    } else {
+      let step = Math.min(++this.zoom.step, length - 1);
+      
+      this.zoom = { scale: this.scales[step], step }
     }
 
-    this.target.addEventListener('wheel', wheelHandler)
+    this.recalculateCanvas();
+  };
+
+  /** Zooming out function
+   * 
+   * @param {boolean} withStep zoom with constant
+   */
+  zoomOut(e: MouseEvent | null, withStep?: boolean): void{
+    const { length } = this.scales;
+    
+    if(withStep) {
+      let scale = this.zoom.scale - this.step,
+          step = this.scales.filter(i => i <= scale).length;
+
+      if(scale > this.scales[0]) {
+        this.zoom = { scale, step };
+      } else {
+        this.zoom = { scale: this.scales[0], step: 0 };
+        this.overflow = false;
+      }
+    } else {
+      let step = Math.max(--this.zoom.step, 0);
+      
+      this.zoom = { scale: this.scales[step], step }
+    }
+
+    this.recalculateCanvas();
+  };
+  
+  initializeSchemeZoom(): void {
+
+    /** Zooming by wheel 
+     * @param {WheelEvent} e event target
+    */
+
+    const handleWheel = (e: WheelEvent) => {
+      let delta: number = Math.max(-1, Math.min(1 , e.deltaY || -e.detail));
+
+      if(delta < 0) this.zoomIn(e, true);
+      if(delta > 0) this.zoomOut(e, true);
+    }
+
+    const handleDblClick = () => {
+      const scalesMiddleValue = Math.ceil(this.scales.length / 2) - 1;
+      const step = this.zoom.step + scalesMiddleValue < this.scales.length ? this.zoom.step + scalesMiddleValue : 0 ;
+
+      this.zoom = { scale: this.scales[step], step}
+      this.recalculateCanvas();    
+    }
+  
+    this.target.addEventListener('wheel', handleWheel)
+    this.target.addEventListener('dblclick', handleDblClick);
   }
 
-  recalculateCanvas(zoom?: number) : void {
+  recalculateCanvas(_origin?: number[]) : void {
     const { canvas } = this.schemeCanvas;
     const { x, y } = this.current;
-    const { scale } = <Zoom>this.zoom;
+    const { scale } = this.zoom;
+    const origin = _origin && _origin.length > 0 ? _origin.map(i => i + 'px').join(' ') : '50% 50%';
 
-    canvas.setAttribute('style', `transform: scale(${scale}) translate(${x}px, ${y}px)`);
+    canvas.setAttribute('style', `transform: scale(${scale}) translate(${x}px, ${y}px); transform-origin: ${origin}`);
   }
 }
 

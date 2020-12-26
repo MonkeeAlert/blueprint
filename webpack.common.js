@@ -6,8 +6,6 @@ const production = process.env.NODE_ENV === "production";
 
 module.exports = {
     entry: {
-        // main: './src/js/main.js',
-        // blueprint: './src/js/blueprint.js',
         main: './src/js/main.js',
         blueprint: './src/js/blueprint.ts',
     },
