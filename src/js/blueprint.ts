@@ -9,8 +9,6 @@
 // 2. zoom with scroll on desktop     [x]
 // 3. zoom with double click          [x]
 // 4. zoom with fingers on phone
-// 5. zooming not in center of screen
-//    but on mouse pointer
 
 // ===== BUTTON PANEL
 // 1. zoom in button                  [x]
@@ -32,13 +30,14 @@
 import * as INTERFACES from './common/interfaces';
 import { FUNCTIONS } from './common/functions';
 
+const OVERFLOW_BORDER = 100;
+
 class Blueprint {
 	private target: HTMLElement;
 	private scheme: INTERFACES.IScheme;
 	private options: INTERFACES.IOptions;
 	private scales: number[];
 	private schemeCanvas: CanvasRenderingContext2D;
-	private timer: INTERFACES.IDragTimer;
 	private step: INTERFACES.IOptions['step'];
 	current: INTERFACES.ICurrent;
 
@@ -49,9 +48,6 @@ class Blueprint {
 	) {
 		this.target = _target;
 		this.scheme = _bg;
-
-		this.timer = { id: null };
-
 		this.step = _options?.step || 0.1;
 
 		if (_options) {
@@ -106,11 +102,6 @@ class Blueprint {
 
 	set drag(state: boolean) {
 		this.current.isDragged = state;
-	}
-
-	clearTimer(id: INTERFACES.IDragTimer['id']): void {
-		clearTimeout(id);
-		this.timer.id = null;
 	}
 
 	setScales(): number[] {
@@ -203,7 +194,9 @@ class Blueprint {
 		return c;
 	}
 
-	/** Drag initializer function for mouse and touch events */
+	/**
+	 * Drag initializer function for mouse and touch events
+	 */
 
 	initializeSchemeDrag(): void {
 		let sx = 0,
@@ -212,10 +205,7 @@ class Blueprint {
 		const startDrag = (e: MouseEvent & TouchEvent): void => {
 			if (!FUNCTIONS.isDescendant(e.target as HTMLElement, this.target)) return;
 
-			const {
-				left,
-				top,
-			}: ClientRect = this.schemeCanvas.canvas.getBoundingClientRect();
+			const { left, top } = this.schemeCanvas.canvas.getBoundingClientRect();
 
 			sx = e.clientX - left;
 			sy = e.clientY - top;
@@ -230,14 +220,15 @@ class Blueprint {
 		const drag = (e: any): void => {
 			if (this.current.isDragged) {
 				const { left, top } = this.schemeCanvas.canvas.getBoundingClientRect();
+
 				let dx = 0,
 					dy = 0;
 
 				dx = e.clientX - left - sx;
 				dy = e.clientY - top - sy;
 
-				this.current.x += dx;
-				this.current.y += dy;
+				this.current.x = this.current.x + dx;
+				this.current.y = this.current.y + dy;
 
 				this.schemeCanvas.canvas.setAttribute(
 					'style',
@@ -260,7 +251,8 @@ class Blueprint {
 		this.target.addEventListener('mousedown', startDrag);
 	}
 
-	/** Zooming in function
+	/**
+	 * Zooming in function
 	 *
 	 * @param {boolean} withStep zoom with constant
 	 */
@@ -270,8 +262,8 @@ class Blueprint {
 		if (withStep) {
 			this.overflow = true;
 
-			let scale = this.zoom.scale + this.step,
-				step = this.scales.filter((i) => i <= scale).length;
+			const scale = this.zoom.scale + this.step;
+			const step = this.scales.filter((i) => i <= scale).length;
 
 			if (scale < this.scales[length - 1]) {
 				this.zoom = { scale, step };
@@ -279,7 +271,7 @@ class Blueprint {
 				this.zoom = { scale: this.scales[length - 1], step };
 			}
 		} else {
-			let step = Math.min(++this.zoom.step, length - 1);
+			const step = Math.min(++this.zoom.step, length - 1);
 
 			this.zoom = { scale: this.scales[step], step };
 		}
@@ -287,7 +279,8 @@ class Blueprint {
 		this.recalculateCanvas();
 	}
 
-	/** Zooming out function
+	/**
+	 * Zooming out function
 	 *
 	 * @param {boolean} withStep zoom with constant
 	 */
@@ -295,8 +288,8 @@ class Blueprint {
 		const { length } = this.scales;
 
 		if (withStep) {
-			let scale = this.zoom.scale - this.step,
-				step = this.scales.filter((i) => i <= scale).length;
+			const scale = this.zoom.scale - this.step;
+			const step = this.scales.filter((i) => i <= scale).length;
 
 			if (scale > this.scales[0]) {
 				this.zoom = { scale, step };
@@ -318,7 +311,6 @@ class Blueprint {
 		/** Zooming by wheel
 		 * @param {WheelEvent} e event target
 		 */
-
 		const handleWheel = (e: WheelEvent) => {
 			let delta: number = Math.max(-1, Math.min(1, e.deltaY || -e.detail));
 
@@ -326,7 +318,9 @@ class Blueprint {
 			if (delta > 0) this.zoomOut(e, true);
 		};
 
-		/** Zooming by doubleclick */
+		/**
+		 * Zooming by doubleclick
+		 */
 		const handleDblClick = () => {
 			const scalesMiddleValue = Math.ceil(this.scales.length / 2) - 1;
 			const step =
