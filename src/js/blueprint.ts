@@ -25,12 +25,11 @@
 // ===== OTHERS
 // 1. all data must be received through json (bg, points, rows)
 
-// FIXME: bug with zoom on windows with size less original scheme image size
-
 import * as INTERFACES from './common/interfaces';
 import { FUNCTIONS } from './common/functions';
 
 const OVERFLOW_BORDER = 100;
+const MIN_PIXELS_FOR_ANIMATION_FRAME = 10;
 
 class Blueprint {
 	private target: HTMLElement;
@@ -39,6 +38,8 @@ class Blueprint {
 	private scales: number[];
 	private schemeCanvas: CanvasRenderingContext2D;
 	private step: INTERFACES.IOptions['step'];
+	private requestAnimationFrameID: any;
+	private isBlocked: boolean;
 	current: INTERFACES.ICurrent;
 
 	constructor(
@@ -49,6 +50,8 @@ class Blueprint {
 		this.target = _target;
 		this.scheme = _bg;
 		this.step = _options?.step || 0.1;
+		this.requestAnimationFrameID = null;
+		this.isBlocked = false;
 
 		if (_options) {
 			this.options = _options;
@@ -197,13 +200,16 @@ class Blueprint {
 	/**
 	 * Drag initializer function for mouse and touch events
 	 */
-
 	initializeSchemeDrag(): void {
 		let sx = 0,
 			sy = 0;
 
 		const startDrag = (e: MouseEvent & TouchEvent): void => {
-			if (!FUNCTIONS.isDescendant(e.target as HTMLElement, this.target)) return;
+			if (
+				!FUNCTIONS.isDescendant(e.target as HTMLElement, this.target) ||
+				this.isBlocked
+			)
+				return;
 
 			const { left, top } = this.schemeCanvas.canvas.getBoundingClientRect();
 
@@ -323,10 +329,15 @@ class Blueprint {
 		 */
 		const handleDblClick = () => {
 			const scalesMiddleValue = Math.ceil(this.scales.length / 2) - 1;
-			const step =
-				this.zoom.step + scalesMiddleValue < this.scales.length
-					? this.zoom.step + scalesMiddleValue
-					: 0;
+			let step: number;
+
+			if (this.zoom.step + scalesMiddleValue < this.scales.length) {
+				this.overflow = true;
+				step = this.zoom.step + scalesMiddleValue;
+			} else {
+				this.overflow = false;
+				step = 0;
+			}
 
 			this.zoom = { scale: this.scales[step], step };
 			this.recalculateCanvas();
@@ -357,12 +368,49 @@ class Blueprint {
 		const { width: sw, height: sh } = this.scheme;
 
 		if (left + cw > sw || left - cw < sw || top + ch > sh || top - ch < sh) {
+			this.isBlocked = true;
+			this.animate(left, top);
+		}
+	}
+
+	// TODO: get pointer speed for returning
+	animate(x: number, y: number): void {
+		let dx: number, dy: number;
+
+		if (x < 0 && x + MIN_PIXELS_FOR_ANIMATION_FRAME < 0) {
+			dx = x + MIN_PIXELS_FOR_ANIMATION_FRAME;
+		} else if (x > 0 && x - MIN_PIXELS_FOR_ANIMATION_FRAME > 0) {
+			dx = x - MIN_PIXELS_FOR_ANIMATION_FRAME;
+		} else {
+			dx = 0;
+		}
+
+		if (y < 0 && y + MIN_PIXELS_FOR_ANIMATION_FRAME < 0) {
+			dy = y + MIN_PIXELS_FOR_ANIMATION_FRAME;
+		} else if (y > 0 && y - MIN_PIXELS_FOR_ANIMATION_FRAME > 0) {
+			dy = y - MIN_PIXELS_FOR_ANIMATION_FRAME;
+		} else {
+			dy = 0;
+		}
+
+		if (dx === 0 && dy === 0) {
 			this.current.x = 0;
 			this.current.y = 0;
+			this.isBlocked = false;
 
 			this.schemeCanvas.canvas.setAttribute(
 				'style',
 				`transform: scale(${this.zoom.scale})`
+			);
+			window.cancelAnimationFrame(this.requestAnimationFrameID);
+		} else {
+			this.schemeCanvas.canvas.setAttribute(
+				'style',
+				`transform: scale(${this.zoom.scale}) translate(${dx}px, ${dy}px); `
+			);
+
+			this.requestAnimationFrameID = window.requestAnimationFrame(() =>
+				this.animate(dx, dy)
 			);
 		}
 	}
