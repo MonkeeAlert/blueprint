@@ -25,11 +25,13 @@
 // ===== OTHERS
 // 1. all data must be received through json (bg, points, rows)
 
-import * as INTERFACES from './common/interfaces';
-import { FUNCTIONS } from './common/functions';
+import * as INTERFACES from "./common/interfaces";
+import { FUNCTIONS } from "./common/functions";
 
 const OVERFLOW_BORDER = 100;
 const MIN_PIXELS_FOR_ANIMATION_FRAME = 10;
+const MIN_SPEED_COEFFICIENT = 1;
+const MAX_SPEED_COEFFICIENT = 1.5;
 
 class Blueprint {
 	private target: HTMLElement;
@@ -37,9 +39,10 @@ class Blueprint {
 	private options: INTERFACES.IOptions;
 	private scales: number[];
 	private schemeCanvas: CanvasRenderingContext2D;
-	private step: INTERFACES.IOptions['step'];
+	private step: INTERFACES.IOptions["step"];
 	private requestAnimationFrameID: any;
 	private isBlocked: boolean;
+	private wasMouseLButtonClicked: boolean;
 	current: INTERFACES.ICurrent;
 
 	constructor(
@@ -52,6 +55,7 @@ class Blueprint {
 		this.step = _options?.step || 0.1;
 		this.requestAnimationFrameID = null;
 		this.isBlocked = false;
+		this.wasMouseLButtonClicked = false;
 
 		if (_options) {
 			this.options = _options;
@@ -136,7 +140,7 @@ class Blueprint {
 
 	initializeSchemeLayout(): void {
 		const { width, height } = this.scheme;
-		const canvas: HTMLCanvasElement = this.createCanvas('background');
+		const canvas: HTMLCanvasElement = this.createCanvas("background");
 
 		this.schemeCanvas = this.buildCanvasLayout(canvas, width, height);
 
@@ -150,14 +154,14 @@ class Blueprint {
 		width: number,
 		height: number
 	): CanvasRenderingContext2D {
-		switch (layout.getAttribute('data-type')) {
-			case 'background':
+		switch (layout.getAttribute("data-type")) {
+			case "background":
 				const { offsetWidth, offsetHeight } = this.target;
 				const bg: HTMLImageElement = new Image();
-				let ctx: any = layout.getContext('2d');
+				let ctx: any = layout.getContext("2d");
 
-				layout.setAttribute('width', `${offsetWidth}`);
-				layout.setAttribute('height', `${offsetHeight}`);
+				layout.setAttribute("width", `${offsetWidth}`);
+				layout.setAttribute("height", `${offsetHeight}`);
 
 				bg.src = this.scheme.image;
 
@@ -183,13 +187,13 @@ class Blueprint {
 	}
 
 	createCanvas(type: string): HTMLCanvasElement {
-		const c: HTMLCanvasElement = document.createElement('canvas');
+		const c: HTMLCanvasElement = document.createElement("canvas");
 
-		c.setAttribute('id', `blueprint-${type}`);
-		c.setAttribute('class', `blueprint__canvas`);
-		c.setAttribute('data-type', type);
+		c.setAttribute("id", `blueprint-${type}`);
+		c.setAttribute("class", `blueprint__canvas`);
+		c.setAttribute("data-type", type);
 		c.setAttribute(
-			'style',
+			"style",
 			`transform: scale(${this.zoom.scale}) translate(0px, 0px)`
 		);
 
@@ -199,47 +203,77 @@ class Blueprint {
 
 	/**
 	 * Drag initializer function for mouse and touch events
+	 *
 	 */
 	initializeSchemeDrag(): void {
 		let sx = 0,
 			sy = 0;
 
+		let pointOfStartX = 0,
+			pointOfStartY = 0;
+		let finalDistanceX = 0,
+			finalDistanceY = 0;
+		let timerStart = 0,
+			timerFinish = 0,
+			timerDifference = 0;
+
 		const startDrag = (e: MouseEvent & TouchEvent): void => {
 			if (
 				!FUNCTIONS.isDescendant(e.target as HTMLElement, this.target) ||
 				this.isBlocked
-			)
+			) {
 				return;
+			} else {
+				this.wasMouseLButtonClicked = true;
 
-			const { left, top } = this.schemeCanvas.canvas.getBoundingClientRect();
+				const { left, top } = this.schemeCanvas.canvas.getBoundingClientRect();
 
-			sx = e.clientX - left;
-			sy = e.clientY - top;
+				// for mouse speed
+				pointOfStartX = e.clientX;
+				pointOfStartY = e.clientY;
+				timerStart = Date.now();
 
-			this.current.isDragged = true;
+				sx = e.clientX - left;
+				sy = e.clientY - top;
 
-			this.target.addEventListener('mouseup', endDrag);
-			this.target.addEventListener('mousemove', drag);
-			this.target.addEventListener('mouseleave', endDrag);
+				this.current.isDragged = true;
+
+				this.target.addEventListener("mouseup", endDrag);
+				this.target.addEventListener("mousemove", drag);
+				this.target.addEventListener("mouseleave", endDrag);
+			}
 		};
 
 		const drag = (e: any): void => {
-			if (this.current.isDragged) {
-				const { left, top } = this.schemeCanvas.canvas.getBoundingClientRect();
+			if (!this.wasMouseLButtonClicked) {
+				return;
+			} else {
+				if (this.current.isDragged) {
+					const {
+						left,
+						top,
+					} = this.schemeCanvas.canvas.getBoundingClientRect();
 
-				let dx = 0,
-					dy = 0;
+					let dx = 0,
+						dy = 0;
+					let distanceDifferenceX = 0,
+						distanceDifferenceY = 0;
 
-				dx = e.clientX - left - sx;
-				dy = e.clientY - top - sy;
+					distanceDifferenceX = e.clientX - pointOfStartX;
+					distanceDifferenceY = e.clientY - pointOfStartY;
+					dx = e.clientX - left - sx;
+					dy = e.clientY - top - sy;
 
-				this.current.x = this.current.x + dx;
-				this.current.y = this.current.y + dy;
+					finalDistanceX = distanceDifferenceX;
+					finalDistanceY = distanceDifferenceY;
+					this.current.x = this.current.x + dx;
+					this.current.y = this.current.y + dy;
 
-				this.schemeCanvas.canvas.setAttribute(
-					'style',
-					`transform: scale(${this.zoom.scale}) translate(${this.current.x}px, ${this.current.y}px)`
-				);
+					this.schemeCanvas.canvas.setAttribute(
+						"style",
+						`transform: scale(${this.zoom.scale}) translate(${this.current.x}px, ${this.current.y}px)`
+					);
+				}
 			}
 		};
 
@@ -247,14 +281,38 @@ class Blueprint {
 			if (this.current.isDragged) this.drag = false;
 
 			if (this.overflow) return;
-			else this.goToCenter();
+			else {
+				let coefficientX = 0,
+					coefficientY = 0;
 
-			this.target.removeEventListener('mousemove', drag);
-			this.target.removeEventListener('mouseup', endDrag);
-			this.target.removeEventListener('mouseleave', endDrag);
+				timerFinish = Date.now();
+				timerDifference = timerFinish - timerStart;
+
+				coefficientX = Math.max(
+					MIN_SPEED_COEFFICIENT,
+					Math.min(
+						Math.abs(finalDistanceX / timerDifference),
+						MAX_SPEED_COEFFICIENT
+					)
+				);
+				coefficientY = Math.max(
+					MIN_SPEED_COEFFICIENT,
+					Math.min(
+						Math.abs(finalDistanceY / timerDifference),
+						MAX_SPEED_COEFFICIENT
+					)
+				);
+
+				this.goToCenter(coefficientX, coefficientY);
+			}
+
+			this.wasMouseLButtonClicked = false;
+			this.target.removeEventListener("mousemove", drag);
+			this.target.removeEventListener("mouseup", endDrag);
+			this.target.removeEventListener("mouseleave", endDrag);
 		};
 
-		this.target.addEventListener('mousedown', startDrag);
+		this.target.addEventListener("mousedown", startDrag);
 	}
 
 	/**
@@ -302,7 +360,7 @@ class Blueprint {
 			} else {
 				this.zoom = { scale: this.scales[0], step: 0 };
 				this.overflow = false;
-				this.goToCenter();
+				this.goToCenter(MAX_SPEED_COEFFICIENT, MAX_SPEED_COEFFICIENT);
 			}
 		} else {
 			let step = Math.max(--this.zoom.step, 0);
@@ -315,6 +373,7 @@ class Blueprint {
 
 	initializeSchemeZoom(): void {
 		/** Zooming by wheel
+		 *
 		 * @param {WheelEvent} e event target
 		 */
 		const handleWheel = (e: WheelEvent) => {
@@ -337,14 +396,15 @@ class Blueprint {
 			} else {
 				this.overflow = false;
 				step = 0;
+				this.goToCenter(MAX_SPEED_COEFFICIENT, MAX_SPEED_COEFFICIENT);
 			}
 
 			this.zoom = { scale: this.scales[step], step };
 			this.recalculateCanvas();
 		};
 
-		this.target.addEventListener('wheel', handleWheel);
-		this.target.addEventListener('dblclick', handleDblClick);
+		this.target.addEventListener("wheel", handleWheel);
+		this.target.addEventListener("dblclick", handleDblClick);
 	}
 
 	recalculateCanvas(_origin?: number[]): void {
@@ -353,12 +413,12 @@ class Blueprint {
 		const { scale } = this.zoom;
 
 		canvas.setAttribute(
-			'style',
+			"style",
 			`transform: scale(${scale}) translate(${x}px, ${y}px)`
 		);
 	}
 
-	goToCenter(): void {
+	goToCenter(speedCoefficientX?: number, speedCoefficientY?: number): void {
 		const {
 			width: cw,
 			height: ch,
@@ -369,26 +429,30 @@ class Blueprint {
 
 		if (left + cw > sw || left - cw < sw || top + ch > sh || top - ch < sh) {
 			this.isBlocked = true;
-			this.animate(left, top);
+			this.animate(left, top, speedCoefficientX, speedCoefficientY);
 		}
 	}
 
-	// TODO: get pointer speed for returning
-	animate(x: number, y: number): void {
+	animate(
+		x: number,
+		y: number,
+		speedCoefficientX?: number,
+		speedCoefficientY?: number
+	): void {
 		let dx: number, dy: number;
 
 		if (x < 0 && x + MIN_PIXELS_FOR_ANIMATION_FRAME < 0) {
-			dx = x + MIN_PIXELS_FOR_ANIMATION_FRAME;
+			dx = (x + MIN_PIXELS_FOR_ANIMATION_FRAME) / speedCoefficientX;
 		} else if (x > 0 && x - MIN_PIXELS_FOR_ANIMATION_FRAME > 0) {
-			dx = x - MIN_PIXELS_FOR_ANIMATION_FRAME;
+			dx = (x - MIN_PIXELS_FOR_ANIMATION_FRAME) / speedCoefficientX;
 		} else {
 			dx = 0;
 		}
 
 		if (y < 0 && y + MIN_PIXELS_FOR_ANIMATION_FRAME < 0) {
-			dy = y + MIN_PIXELS_FOR_ANIMATION_FRAME;
+			dy = (y + MIN_PIXELS_FOR_ANIMATION_FRAME) / speedCoefficientY;
 		} else if (y > 0 && y - MIN_PIXELS_FOR_ANIMATION_FRAME > 0) {
-			dy = y - MIN_PIXELS_FOR_ANIMATION_FRAME;
+			dy = (y - MIN_PIXELS_FOR_ANIMATION_FRAME) / speedCoefficientY;
 		} else {
 			dy = 0;
 		}
@@ -399,18 +463,18 @@ class Blueprint {
 			this.isBlocked = false;
 
 			this.schemeCanvas.canvas.setAttribute(
-				'style',
+				"style",
 				`transform: scale(${this.zoom.scale})`
 			);
 			window.cancelAnimationFrame(this.requestAnimationFrameID);
 		} else {
 			this.schemeCanvas.canvas.setAttribute(
-				'style',
+				"style",
 				`transform: scale(${this.zoom.scale}) translate(${dx}px, ${dy}px); `
 			);
 
 			this.requestAnimationFrameID = window.requestAnimationFrame(() =>
-				this.animate(dx, dy)
+				this.animate(dx, dy, speedCoefficientX, speedCoefficientY)
 			);
 		}
 	}
