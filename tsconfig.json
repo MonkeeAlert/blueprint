@@ -1,5 +1,5 @@
 {
-  "baseUrl": "./src/js",
+  "baseUrl": "./src/js/",
   "compilerOptions": {
     "outDir": "./dist/",
     "noImplicitAny": true,
@@ -8,6 +8,8 @@
     "allowJs": true
   },
   "files": [
-    "./src/js/blueprint.ts"
+    "src/js/blueprint.ts",
+    // "./src/js/lib/zoom.ts",
+    // "./src/js/lib/points.ts",
   ]
 }
